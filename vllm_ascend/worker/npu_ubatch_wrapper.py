@@ -218,6 +218,7 @@ class UBatchWrapper(GPUUBatchWrapper):
                 thread.join()
             sorted_results = [value for position, value in sorted(results)]
             result = torch.cat(sorted_results, dim=0)
+            print("##### run_ubatch end")
             return result
 
     @_torch_cuda_wrapper()
