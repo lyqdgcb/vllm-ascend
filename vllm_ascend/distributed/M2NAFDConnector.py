@@ -265,11 +265,13 @@ class M2NAFDConnector(AFDConnectorBase):
         aiv_num = metadata.aiv_num
         k = metadata.k
         handle = metadata.handle
-        print("##### n2m_distribute_send")
+        ubatch_idx = kwargs.get('ubatch_idx', 0)
+        groupEp = _get_group_ep(ubatch_idx, self.hccl_comm_name, self.hccl_comm_name2, self.hccl_comm_name3)
+
         torch_npu.npu_n2m_distribute_send(expandX=ffn_output,
                                         ep_send_counts=handle,
                                         expert_scales=topk_weights,
-                                        group_ep=self.hccl_comm_name,
+                                        group_ep=groupEp,
                                         world_size=self.attn_size + self.ffn_size,
                                         moe_world_size=self.ffn_size,
                                         ep_rank_id=self.rank,
@@ -282,6 +284,7 @@ class M2NAFDConnector(AFDConnectorBase):
     
     # ATTN发给MOE(MOE接收)
     def recv_attn_output(self, metadata: Optional[Any] = None, **kwargs) -> Any:
+        ubatch_idx = kwargs.get('ubatch_idx', 0)
         m2n_afdconnector_data = metadata
         
         afdConnectorMetadata = None
@@ -306,12 +309,12 @@ class M2NAFDConnector(AFDConnectorBase):
              expert_token_nums_type = 0
              aiv_num = 0
              batch_size = 0
+        groupEp = _get_group_ep(ubatch_idx, self.hccl_comm_name, self.hccl_comm_name2, self.hccl_comm_name3)
 
         # ... logic for npu_m2n_distribute_recv ...
-        print("##### m2n_distribute_recv")
         recv_result = torch_npu.npu_m2n_distribute_recv(
                                                 x=torch.tensor([], dtype=torch.bfloat16, device='npu'),
-                                                group_ep=self.hccl_comm_name,
+                                                group_ep=groupEp,
                                                 world_size=self.attn_size + self.ffn_size,
                                                 moe_world_size=self.ffn_size,
                                                 ep_rank_id=self.rank,
@@ -430,7 +433,6 @@ def m2n_send_attn_output_impl(hidden_states: torch.Tensor,
     groupEp = _get_group_ep(ubatch_idx, hccl_comm_name, hccl_comm_name2, hccl_comm_name3)
     curr_stream = torch.npu.current_stream()
     with npu_stream_switch_within_graph(curr_stream, comm_stream, multistream_enable):
-        print("##### m2n_distribute_send")
         recv_counts = torch_npu.npu_m2n_distribute_send(x=hidden_states,
                                                         expert_ids=topk_ids,
                                                         expert_scales=topk_weights,
@@ -488,7 +490,6 @@ def m2n_recv_ffn_output_impl(hidden_states: torch.Tensor,
     if multistream_enable:
         curr_stream = torch.npu.current_stream()
         comm_event.wait(curr_stream)
-    print("##### n2m_distribute_recv")
     xOut = torch_npu.npu_n2m_distribute_recv(x=hidden_states,
                                                 ep_recv_counts=handle,
                                                 group_ep=groupEp,
